@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Store Alert Triage — Kanban Demo</title>
+<style>
+  :root{
+    --emerald:#059669; --emerald-dark:#047857; --emerald-soft:#ecfdf5;
+    --ink:#0f172a; --muted:#64748b; --line:#e2e8f0; --bg:#f7faf9; --card:#ffffff;
+    --amber:#b45309; --red:#dc2626; --blue:#2563eb;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);line-height:1.45}
+  /* ---- header (distinct: two-band with integrated shift simulator) ---- */
+  .topband{background:linear-gradient(120deg,#064e3b,#059669);color:#fff;padding:14px 28px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+  .topband .brand{font-size:22px;font-weight:800;letter-spacing:.3px}
+  .topband .brand span{font-weight:400;opacity:.85;font-size:15px;margin-left:10px}
+  .shift-sim{margin-left:auto;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);border-radius:14px;padding:10px 16px;min-width:340px}
+  .shift-sim label{font-size:11px;text-transform:uppercase;letter-spacing:1.2px;opacity:.85;display:block;margin-bottom:6px}
+  .shift-sim input[type=range]{width:100%;accent-color:#a7f3d0;cursor:pointer}
+  .shift-labels{display:flex;justify-content:space-between;font-size:12px;opacity:.95;margin-top:2px}
+  .shift-labels b{font-size:13px}
+  .rolebar{background:#fff;border-bottom:1px solid var(--line);padding:10px 28px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .rolebar .seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+  .rolebar .seg button{border:0;background:#fff;padding:7px 18px;font-size:13px;font-weight:600;cursor:pointer;color:var(--muted)}
+  .rolebar .seg button.active{background:var(--emerald);color:#fff}
+  .rolebar .note{font-size:12px;color:var(--muted)}
+  .rolebar .failbtn{margin-left:auto;font-size:12px;border:1px dashed var(--red);color:var(--red);background:#fff;border-radius:8px;padding:6px 12px;cursor:pointer}
+  /* ---- stats strip ---- */
+  .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;padding:18px 28px 4px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px;border-top:3px solid var(--emerald)}
+  .stat .n{font-size:24px;font-weight:800}
+  .stat .t{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+  /* ---- toolbar ---- */
+  .toolbar{display:flex;gap:10px;align-items:center;padding:14px 28px;flex-wrap:wrap}
+  .toolbar input[type=search]{padding:9px 14px;border:1px solid var(--line);border-radius:10px;font-size:14px;min-width:240px}
+  .toolbar select{padding:9px 12px;border:1px solid var(--line);border-radius:10px;font-size:14px;background:#fff}
+  .flagtoggle{display:inline-flex;align-items:center;gap:6px;font-size:14px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 12px;cursor:pointer}
+  .flagtoggle input{accent-color:var(--emerald)}
+  /* ---- kanban ---- */
+  .board{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;padding:4px 28px 18px;align-items:start}
+  .col{background:#eef4f2;border:1px solid var(--line);border-radius:14px;min-height:320px;display:flex;flex-direction:column}
+  .col header{padding:12px 16px;font-weight:700;font-size:14px;display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid transparent}
+  .col.new header{border-color:#f59e0b} .col.ack header{border-color:var(--blue)} .col.coach header{border-color:var(--emerald)}
+  .col header .count{background:#fff;border:1px solid var(--line);border-radius:999px;font-size:12px;padding:1px 10px;font-weight:700}
+  .col .cards{padding:12px;display:flex;flex-direction:column;gap:10px;min-height:200px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;cursor:pointer;transition:box-shadow .15s}
+  .card:hover{box-shadow:0 4px 14px rgba(6,78,59,.12)}
+  .card .chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+  .chip{font-size:11px;font-weight:700;border-radius:999px;padding:2px 9px}
+  .chip.sev-Critical{background:#fee2e2;color:#991b1b}
+  .chip.sev-High{background:#ffedd5;color:#9a3412}
+  .chip.sev-Medium{background:#fef9c3;color:#854d0e}
+  .chip.type{background:#e0f2fe;color:#075985}
+  .chip.flagged{background:#fff7ed;color:#c2410c;border:1px solid #fdba74}
+  .card h4{font-size:14px;margin-bottom:4px}
+  .card .meta{font-size:12px;color:var(--muted)}
+  .card .star{float:right;font-size:16px;color:#cbd5e1;cursor:pointer}
+  .card .star.on{color:#f59e0b}
+  /* skeleton */
+  .skel{background:linear-gradient(90deg,#eef2f1 25%,#f8fafc 50%,#eef2f1 75%);background-size:200% 100%;animation:sh 1.1s infinite;border-radius:10px;height:118px}
+  @keyframes sh{to{background-position:-200% 0}}
+  .empty{padding:34px 16px;text-align:center;color:var(--muted);font-size:14px;border:2px dashed var(--line);border-radius:10px;background:#fff}
+  /* pagination */
+  .pager{display:flex;gap:8px;align-items:center;justify-content:center;padding:6px 28px 20px}
+  .pager button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 14px;font-size:13px;cursor:pointer}
+  .pager button:disabled{opacity:.4;cursor:default}
+  .pager .info{font-size:13px;color:var(--muted)}
+  /* detail drawer */
+  .drawer{position:fixed;top:0;right:-460px;width:440px;max-width:94vw;height:100vh;background:#fff;border-left:1px solid var(--line);box-shadow:-8px 0 30px rgba(0,0,0,.12);transition:right .25s;z-index:50;display:flex;flex-direction:column}
+  .drawer.open{right:0}
+  .drawer .dhead{padding:18px 20px;border-bottom:1px solid var(--line)}
+  .drawer .dhead h3{font-size:17px;margin-bottom:6px}
+  .drawer .dbody{padding:18px 20px;overflow-y:auto;flex:1}
+  .drawer .dfoot{padding:16px 20px;border-top:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap}
+  .btn{border:0;border-radius:9px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer}
+  .btn.go{background:var(--emerald);color:#fff} .btn.go:hover{background:var(--emerald-dark)}
+  .btn.ghost{background:#f1f5f9;color:var(--ink)}
+  .btn.warn{background:#fef3c7;color:#92400e}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .close-x{position:absolute;top:12px;right:14px;border:0;background:none;font-size:20px;cursor:pointer;color:var(--muted)}
+  .checklist{list-style:none;margin:10px 0}
+  .checklist li{display:flex;gap:10px;align-items:flex-start;font-size:14px;padding:7px 0;border-bottom:1px solid #f1f5f9}
+  .checklist input{accent-color:var(--emerald);margin-top:3px}
+  .pbar{height:8px;background:#e5e7eb;border-radius:999px;overflow:hidden;margin:8px 0 4px}
+  .pbar i{display:block;height:100%;background:var(--emerald);border-radius:999px;transition:width .25s}
+  .pbar-t{font-size:12px;color:var(--muted)}
+  .kv{font-size:13px;margin:6px 0} .kv b{color:var(--muted);font-weight:600}
+  .overlay{position:fixed;inset:0;background:rgba(15,23,42,.35);opacity:0;pointer-events:none;transition:opacity .2s;z-index:40}
+  .overlay.on{opacity:1;pointer-events:all}
+  .errbar{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:10px;padding:12px 16px;margin:0 28px 12px;display:flex;gap:12px;align-items:center;font-size:14px}
+  .errbar button{background:var(--red);color:#fff;border:0;border-radius:8px;padding:8px 16px;font-weight:700;cursor:pointer}
+  footer{border-top:1px solid var(--line);margin-top:10px;padding:16px 28px;font-size:12px;color:var(--muted);text-align:center}
+</style>
+</head>
+<body>
+
+<div class="topband">
+  <div class="brand">Store Alert Triage <span>kanban board · district manager view</span></div>
+  <div class="shift-sim">
+    <label for="shiftRange">Shift simulator — which alerts are live</label>
+    <input type="range" id="shiftRange" min="0" max="2" step="1" value="0" aria-label="Time of day">
+    <div class="shift-labels"><span>🌅 <b>Morning rush</b> 7–11</span><span>☀️ <b>Midday</b> 11–16</span><span>🌙 <b>Evening</b> 16–22</span></div>
+  </div>
+</div>
+
+<div class="rolebar">
+  <span style="font-size:13px;font-weight:600;color:var(--muted)">Role:</span>
+  <div class="seg">
+    <button id="roleManager" class="active">Manager (can act)</button>
+    <button id="roleViewer">Viewer (read-only)</button>
+  </div>
+  <span class="note" id="roleNote">Manager can acknowledge, escalate, send coaching and resolve alerts.</span>
+  <button class="failbtn" id="failBtn">⚠ Simulate API failure</button>
+</div>
+
+<div class="stats" id="stats"></div>
+
+<div class="toolbar">
+  <input type="search" id="search" placeholder="Search alerts or locations…" aria-label="Search alerts">
+  <select id="fType" aria-label="Filter by type"><option value="">All types</option></select>
+  <select id="fSev" aria-label="Filter by severity">
+    <option value="">All severities</option><option>Critical</option><option>High</option><option>Medium</option>
+  </select>
+  <label class="flagtoggle"><input type="checkbox" id="fFlag"> ⚑ Flagged only</label>
+</div>
+
+<div id="errSlot"></div>
+
+<div class="board" id="board">
+  <div class="col new"><header>New <span class="count" id="cNew">0</span></header><div class="cards" id="colNew"></div></div>
+  <div class="col ack"><header>Acknowledged <span class="count" id="cAck">0</span></header><div class="cards" id="colAck"></div></div>
+  <div class="col coach"><header>Coaching sent <span class="count" id="cCoach">0</span></header><div class="cards" id="colCoach"></div></div>
+</div>
+
+<div class="pager">
+  <button id="prev">← Prev</button><span class="info" id="pageInfo"></span><button id="next">Next →</button>
+</div>
+
+<div class="overlay" id="overlay"></div>
+<aside class="drawer" id="drawer" aria-label="Alert details">
+  <button class="close-x" id="closeDrawer">×</button>
+  <div class="dhead" id="dHead"></div>
+  <div class="dbody" id="dBody"></div>
+  <div class="dfoot" id="dFoot"></div>
+</aside>
+
+<footer>Demo data only — illustrative store alerts, no real locations, staff or data; no integration with Meadow AI.</footer>
+
+<script>
+"use strict";
+/* ---------- fictional demo data (no real locations, staff, or customers) ---------- */
+const SHIFTS = ["morning","midday","evening"];
+const SHIFT_NAMES = {morning:"Morning rush · 7–11", midday:"Midday · 11–16", evening:"Evening · 16–22"};
+const ALERTS = [
+ {id:1, title:"Queue building at registers", desc:"Front-end queue exceeds 6 guests for 12 minutes during peak.", type:"Service speed", sev:"Critical", loc:"Location 03 · Riverside", t:"08:12", shifts:["morning"], status:"new", flagged:true, checks:["Confirm queue length","Check register staffing","Review break schedule"]},
+ {id:2, title:"Greeting missed at entrance", desc:"Multiple guests entered without staff acknowledgement.", type:"Service speed", sev:"High", loc:"Location 03 · Riverside", t:"08:40", shifts:["morning"], status:"new", flagged:false, checks:["Confirm door coverage","Check host rota"]},
+ {id:3, title:"Upsell prompt skipped at till", desc:"Add-on prompt not offered on 9 of 14 transactions.", type:"Upsell missed", sev:"Medium", loc:"Location 07 · Harbor Point", t:"09:05", shifts:["morning","midday"], status:"new", flagged:false, checks:["Confirm prompt step","Review till script"]},
+ {id:4, title:"Missed charge on self-serve", desc:"Two self-serve transactions completed without add-on charges.", type:"Missed charge", sev:"High", loc:"Location 11 · Northgate", t:"09:22", shifts:["morning"], status:"acknowledged", flagged:true, checks:["Confirm register log","Check staff assignment"]},
+ {id:5, title:"Floor spills uncleared", desc:"Spill near aisle 4 unaddressed for 20+ minutes.", type:"Cleanliness", sev:"Medium", loc:"Location 07 · Harbor Point", t:"10:15", shifts:["morning","midday"], status:"new", flagged:false, checks:["Confirm zone checklist","Check cleaner rota"]},
+ {id:6, title:"Drive-through wait over target", desc:"Average wait 7:40 vs 4:30 target across 18 orders.", type:"Service speed", sev:"Critical", loc:"Location 14 · Brookfield", t:"12:05", shifts:["midday"], status:"new", flagged:true, checks:["Confirm window staffing","Review kitchen pacing"]},
+ {id:7, title:"Lunch-rush labour mismatch", desc:"4 staff scheduled vs 6 needed for current traffic.", type:"Staffing gap", sev:"High", loc:"Location 03 · Riverside", t:"12:20", shifts:["midday"], status:"new", flagged:false, checks:["Confirm footfall","Check float staff availability"]},
+ {id:8, title:"Upsell prompt skipped at till", desc:"Add-on prompt not offered on 11 of 19 transactions.", type:"Upsell missed", sev:"Medium", loc:"Location 14 · Brookfield", t:"12:47", shifts:["midday"], status:"acknowledged", flagged:false, checks:["Confirm prompt step","Review till script"]},
+ {id:9, title:"Restroom check overdue", desc:"Scheduled restroom check missed by 45 minutes.", type:"Cleanliness", sev:"Medium", loc:"Location 19 · Old Town", t:"13:10", shifts:["midday"], status:"new", flagged:false, checks:["Confirm check rota","Review sign-off log"]},
+ {id:10, title:"Register voids spike", desc:"6 voids in one hour vs 1.2 typical.", type:"Missed charge", sev:"High", loc:"Location 19 · Old Town", t:"13:35", shifts:["midday"], status:"new", flagged:false, checks:["Confirm void log","Check supervisor approval"]},
+ {id:11, title:"Greeting missed at entrance", desc:"Evening arrivals unacknowledged during shift change.", type:"Service speed", sev:"High", loc:"Location 07 · Harbor Point", t:"17:05", shifts:["evening"], status:"new", flagged:false, checks:["Confirm door coverage","Check handover notes"]},
+ {id:12, title:"Close-down prep behind", desc:"Closing checklist 40% complete 30 min before close.", type:"Staffing gap", sev:"Medium", loc:"Location 11 · Northgate", t:"19:40", shifts:["evening"], status:"new", flagged:false, checks:["Confirm checklist progress","Check closer assignments"]},
+ {id:13, title:"Upsell prompt skipped at till", desc:"Add-on prompt not offered on 7 of 12 transactions.", type:"Upsell missed", sev:"Medium", loc:"Location 11 · Northgate", t:"18:15", shifts:["evening"], status:"new", flagged:false, checks:["Confirm prompt step","Review till script"]},
+ {id:14, title:"Queue building at registers", desc:"Evening queue exceeds 5 guests for 10 minutes.", type:"Service speed", sev:"High", loc:"Location 14 · Brookfield", t:"18:50", shifts:["evening"], status:"acknowledged", flagged:true, checks:["Confirm queue length","Check register staffing"]},
+ {id:15, title:"Floor spills uncleared", desc:"Spill near entrance unaddressed for 25 minutes.", type:"Cleanliness", sev:"Medium", loc:"Location 03 · Riverside", t:"20:05", shifts:["evening"], status:"new", flagged:false, checks:["Confirm zone checklist","Check cleaner rota"]},
+ {id:16, title:"Staffing gap — callout unfilled", desc:"One callout; shift running one staff member short.", type:"Staffing gap", sev:"Critical", loc:"Location 19 · Old Town", t:"07:55", shifts:["morning"], status:"new", flagged:true, checks:["Confirm callout log","Check on-call list"]},
+ {id:17, title:"Drive-through wait over target", desc:"Morning average wait 6:55 vs 4:30 target.", type:"Service speed", sev:"High", loc:"Location 07 · Harbor Point", t:"08:45", shifts:["morning","midday"], status:"coaching", flagged:false, checks:["Confirm window staffing","Review kitchen pacing"]},
+ {id:18, title:"Missed charge on self-serve", desc:"Three self-serve transactions missing add-on charges.", type:"Missed charge", sev:"High", loc:"Location 03 · Riverside", t:"11:30", shifts:["midday"], status:"coaching", flagged:false, checks:["Confirm register log","Check staff assignment"]},
+ {id:19, title:"Lunch-rush labour mismatch", desc:"5 staff scheduled vs 7 needed for current traffic.", type:"Staffing gap", sev:"Critical", loc:"Location 11 · Northgate", t:"12:10", shifts:["midday"], status:"acknowledged", flagged:true, checks:["Confirm footfall","Check float staff availability"]},
+ {id:20, title:"Restroom check overdue", desc:"Scheduled check missed twice this week.", type:"Cleanliness", sev:"Medium", loc:"Location 14 · Brookfield", t:"15:20", shifts:["midday","evening"], status:"new", flagged:false, checks:["Confirm check rota","Review sign-off log"]},
+ {id:21, title:"Greeting missed at entrance", desc:"Midday arrivals unacknowledged during lunch peak.", type:"Service speed", sev:"Medium", loc:"Location 19 · Old Town", t:"13:50", shifts:["midday"], status:"new", flagged:false, checks:["Confirm door coverage","Check host rota"]},
+ {id:22, title:"Close-down prep behind", desc:"Evening checklist stalled; freezer restock incomplete.", type:"Staffing gap", sev:"High", loc:"Location 07 · Harbor Point", t:"20:30", shifts:["evening"], status:"new", flagged:false, checks:["Confirm checklist progress","Check closer assignments"]},
+ {id:23, title:"Queue building at registers", desc:"Midday queue exceeds 6 guests for 9 minutes.", type:"Service speed", sev:"Medium", loc:"Location 19 · Old Town", t:"12:55", shifts:["midday"], status:"new", flagged:false, checks:["Confirm queue length","Check register staffing"]},
+ {id:24, title:"Register voids spike", desc:"4 voids in one hour vs 1.1 typical.", type:"Missed charge", sev:"Medium", loc:"Location 14 · Brookfield", t:"18:25", shifts:["evening"], status:"new", flagged:false, checks:["Confirm void log","Check supervisor approval"]}
+];
+const CHECK_STATE = {}; // id -> [bool]
+ALERTS.forEach(a => CHECK_STATE[a.id] = a.checks.map(()=>false));
+
+/* ---------- state ---------- */
+const state = { shift:0, role:"manager", q:"", type:"", sev:"", flaggedOnly:false, page:0, pageSize:9, failNext:false, loading:false };
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+/* ---------- filter types ---------- */
+(function(){ const types=[...new Set(ALERTS.map(a=>a.type))];
+  types.forEach(t=>{ const o=document.createElement("option"); o.textContent=t; $("fType").appendChild(o); });
+})();
+
+/* ---------- data pipeline ---------- */
+function liveAlerts(){
+  const sh = SHIFTS[state.shift];
+  return ALERTS.filter(a => a.shifts.includes(sh) && a.status!=="resolved");
+}
+function filtered(){
+  const q = state.q.trim().toLowerCase();
+  return liveAlerts().filter(a =>
+    (!q || (a.title+" "+a.loc+" "+a.desc).toLowerCase().includes(q)) &&
+    (!state.type || a.type===state.type) &&
+    (!state.sev || a.sev===state.sev) &&
+    (!state.flaggedOnly || a.flagged));
+}
+function pageAlerts(){
+  const f = filtered();
+  const pages = Math.max(1, Math.ceil(f.length / state.pageSize));
+  if (state.page >= pages) state.page = pages-1;
+  const start = state.page*state.pageSize;
+  return {items:f.slice(start,start+state.pageSize), total:f.length, pages};
+}
+
+/* ---------- render ---------- */
+function cardHTML(a){
+  return `<div class="card" data-id="${a.id}" tabindex="0" role="button" aria-label="Open alert ${esc(a.title)}">
+    <span class="star ${a.flagged?'on':''}" data-star="${a.id}" title="Flag / unflag">★</span>
+    <div class="chips">
+      <span class="chip sev-${a.sev}">${a.sev}</span>
+      <span class="chip type">${esc(a.type)}</span>
+      ${a.flagged?'<span class="chip flagged">⚑ flagged</span>':''}
+    </div>
+    <h4>${esc(a.title)}</h4>
+    <div class="meta">${esc(a.loc)} · ${esc(a.t)}</div>
+  </div>`;
+}
+function skeletonHTML(){ return `<div class="skel"></div>`.repeat(2); }
+
+function renderStats(){
+  const live = liveAlerts();
+  const n = live.filter(a=>a.status==="new").length;
+  const ack = live.filter(a=>a.status==="acknowledged").length;
+  const coach = live.filter(a=>a.status==="coaching").length;
+  const fl = live.filter(a=>a.flagged).length;
+  const stats = [
+    [live.length,"Live alerts · "+SHIFT_NAMES[SHIFTS[state.shift]]],
+    [n,"New — needs triage"],
+    [ack,"Acknowledged"],
+    [coach,"Coaching sent"],
+    [fl,"Flagged"]
+  ];
+  $("stats").innerHTML = stats.map(s=>`<div class="stat"><div class="n">${s[0]}</div><div class="t">${esc(s[1])}</div></div>`).join("");
+}
+function renderBoard(items){
+  const cols = {new:$("colNew"), acknowledged:$("colAck"), coaching:$("colCoach")};
+  const counts = {new:0, acknowledged:0, coaching:0};
+  Object.values(cols).forEach(c=>c.innerHTML="");
+  items.forEach(a=>{ cols[a.status].insertAdjacentHTML("beforeend", cardHTML(a)); counts[a.status]++; });
+  $("cNew").textContent=counts.new; $("cAck").textContent=counts.acknowledged; $("cCoach").textContent=counts.coaching;
+  ["colNew","colAck","colCoach"].forEach(id=>{
+    if(!$(id).children.length) $(id).innerHTML = `<div class="empty">No alerts here.<br>Try another shift, filter or page.</div>`;
+  });
+}
+function renderPager(total, pages){
+  $("pageInfo").textContent = total ? `Page ${state.page+1} of ${pages} · ${total} alert${total===1?"":"s"}` : "No alerts match";
+  $("prev").disabled = state.page<=0;
+  $("next").disabled = state.page>=pages-1;
+}
+function renderAll(){
+  renderStats();
+  const {items,total,pages} = pageAlerts();
+  renderBoard(items);
+  renderPager(total,pages);
+}
+function showSkeletonThen(fn){
+  state.loading = true;
+  ["colNew","colAck","colCoach"].forEach(id=>{ $(id).innerHTML=skeletonHTML(); });
+  setTimeout(()=>{ state.loading=false; fn(); }, 650);
+}
+/* simulated fetch with failure injection */
+function fetchAlerts(){
+  return new Promise((res,rej)=>{
+    setTimeout(()=>{ state.failNext ? rej(new Error("Simulated network failure")) : res(true); }, 500);
+  });
+}
+async function refresh(withSkeleton){
+  $("errSlot").innerHTML = "";
+  try{
+    await fetchAlerts();
+    withSkeleton ? showSkeletonThen(renderAll) : renderAll();
+  }catch(e){
+    $("errSlot").innerHTML = `<div class="errbar" role="alert"><span>⚠ <b>Couldn’t load alerts.</b> The demo API returned an error (simulated). Your triage state is unchanged.</span><button id="retryBtn">Retry</button></div>`;
+    $("retryBtn").onclick = ()=>refresh(true);
+  }
+}
+
+/* ---------- detail drawer ---------- */
+let openId = null;
+function openDrawer(id){
+  openId = id;
+  const a = ALERTS.find(x=>x.id===id);
+  if(!a) return;
+  const ro = state.role!=="manager";
+  const prog = CHECK_STATE[id];
+  const done = prog.filter(Boolean).length;
+  const pct = Math.round(done/prog.length*100);
+  $("dHead").innerHTML = `
+    <div class="chips" style="margin-bottom:8px"><span class="chip sev-${a.sev}">${a.sev}</span><span class="chip type">${esc(a.type)}</span>${a.flagged?'<span class="chip flagged">⚑ flagged</span>':''}</div>
+    <h3>${esc(a.title)}</h3>
+    <div class="meta" style="font-size:13px;color:var(--muted)">${esc(a.loc)} · detected ${esc(a.t)} · status: <b>${a.status}</b></div>`;
+  $("dBody").innerHTML = `
+    <p class="kv">${esc(a.desc)}</p>
+    <p class="kv"><b>Live during:</b> ${a.shifts.map(s=>SHIFT_NAMES[s].split(" ·")[0]).join(", ")}</p>
+    <h4 style="font-size:14px;margin:14px 0 2px">Review checklist</h4>
+    <div class="pbar"><i style="width:${pct}%"></i></div>
+    <div class="pbar-t">${done} of ${prog.length} checks done</div>
+    <ul class="checklist">${a.checks.map((c,i)=>`<li><input type="checkbox" data-ci="${i}" ${prog[i]?"checked":""} ${ro?"disabled":""}><span>${esc(c)}</span></li>`).join("")}</ul>
+    ${ro?'<p class="kv" style="color:var(--muted)">🔒 Viewer role is read-only — switch to Manager to act.</p>':''}`;
+  const btns = [];
+  if(a.status==="new") btns.push(`<button class="btn go" data-act="acknowledge" ${ro?"disabled":""}>Acknowledge</button>`);
+  if(a.status==="acknowledged") btns.push(`<button class="btn go" data-act="coach" ${ro?"disabled":""}>Send coaching</button>`);
+  if(a.status!=="resolved") btns.push(`<button class="btn warn" data-act="escalate" ${ro?"disabled":""}>⚑ Escalate</button>`);
+  if(a.status!=="new" && a.status!=="resolved") btns.push(`<button class="btn ghost" data-act="resolve" ${ro?"disabled":""}>Mark resolved</button>`);
+  btns.push(`<button class="btn ghost" data-act="flag">${a.flagged?"Unflag":"Flag"}</button>`);
+  $("dFoot").innerHTML = btns.join("");
+  $("drawer").classList.add("open"); $("overlay").classList.add("on");
+}
+function closeDrawer(){ $("drawer").classList.remove("open"); $("overlay").classList.remove("on"); openId=null; }
+
+document.addEventListener("click", e=>{
+  const star = e.target.closest("[data-star]");
+  if(star){ e.stopPropagation(); const a=ALERTS.find(x=>x.id==star.dataset.star); a.flagged=!a.flagged; renderAll(); if(openId===a.id) openDrawer(a.id); return; }
+  const card = e.target.closest(".card");
+  if(card){ openDrawer(+card.dataset.id); return; }
+  const act = e.target.closest("[data-act]");
+  if(act && openId!=null){
+    const a = ALERTS.find(x=>x.id===openId); const op = act.dataset.act;
+    if(op==="acknowledge") a.status="acknowledged";
+    else if(op==="coach") a.status="coaching";
+    else if(op==="resolve") a.status="resolved";
+    else if(op==="escalate") a.flagged=true;
+    else if(op==="flag") a.flagged=!a.flagged;
+    closeDrawer(); renderAll();
+  }
+});
+document.addEventListener("change", e=>{
+  const cb = e.target.closest("[data-ci]");
+  if(cb && openId!=null){ CHECK_STATE[openId][+cb.dataset.ci]=cb.checked; openDrawer(openId); }
+});
+$("closeDrawer").onclick = closeDrawer; $("overlay").onclick = closeDrawer;
+document.addEventListener("keydown", e=>{ if(e.key==="Escape") closeDrawer(); });
+
+/* ---------- controls ---------- */
+let deb=null;
+$("search").addEventListener("input", e=>{ clearTimeout(deb); deb=setTimeout(()=>{ state.q=e.target.value; state.page=0; renderAll(); },300); });
+$("fType").addEventListener("change", e=>{ state.type=e.target.value; state.page=0; renderAll(); });
+$("fSev").addEventListener("change", e=>{ state.sev=e.target.value; state.page=0; renderAll(); });
+$("fFlag").addEventListener("change", e=>{ state.flaggedOnly=e.target.checked; state.page=0; renderAll(); });
+$("prev").onclick = ()=>{ if(state.page>0){ state.page--; renderAll(); } };
+$("next").onclick = ()=>{ state.page++; renderAll(); };
+
+$("shiftRange").addEventListener("change", e=>{ state.shift=+e.target.value; state.page=0; refresh(true); });
+
+$("roleManager").onclick = ()=>setRole("manager");
+$("roleViewer").onclick = ()=>setRole("viewer");
+function setRole(r){
+  state.role=r;
+  $("roleManager").classList.toggle("active", r==="manager");
+  $("roleViewer").classList.toggle("active", r==="viewer");
+  $("roleNote").textContent = r==="manager"
+    ? "Manager can acknowledge, escalate, send coaching and resolve alerts."
+    : "Viewer is read-only — actions and checklist are disabled.";
+  if(openId!=null) openDrawer(openId);
+}
+
+$("failBtn").onclick = ()=>{ state.failNext=true; refresh(false); };
+
+/* ---------- init ---------- */
+showSkeletonThen(renderAll);
+</script>
+</body>
+</html>
